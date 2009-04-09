@@ -42,31 +42,44 @@ struct nand_driver {
 	int (*ndri_calc_ecc)(nand_device_t, uint8_t *);
 };
 
+struct nand_device_info {
+	uint8_t		ndi_manf_id;
+	uint8_t		ndi_dev_id;	/* Device ID */
+
+	uint16_t	ndi_spare_size;	/* Spare bytes per page */
+	uint32_t	ndi_page_size;	/* Bytes per page (not spare) */
+	uint32_t	ndi_page_cnt;	/* Pages per block */
+	uint32_t	ndi_block_cnt;	/* Total blocks per LUN */
+	uint8_t		ndi_lun_cnt;	/* Total number of LUNs */
+
+	uint8_t		ndi_cell_size;	/* Bits per cell */
+	uint8_t		ndi_column_cycles; /* Column address cycle count */
+	uint8_t		ndi_row_cycles;	/* Row address cycle count */
+
+	char		ndi_read_start;	/* Do we need to issue a read start */
+	const char	*ndi_name;	/* The name of the device */
+};
+
 #define NAND_ECC_MAX 16
 struct nand_device {
 	/* Set by the NAND controller */
 	nand_driver_t	ndev_driver;
 
-	unsigned int	ndev_width;	/* Bus width in bits, eg. 8 or 16bits */
+	/* Device info. Set by the NAND device */
+	struct nand_device_info ndev_info;
+#define ndev_manf_id	ndev_info.ndi_manf_id
+#define ndev_dev_id	ndev_info.ndi_dev_id
+#define ndev_spare_size	ndev_info.ndi_spare_size
+#define ndev_page_size	ndev_info.ndi_page_size
+#define ndev_page_cnt	ndev_info.ndi_page_cnt
+#define ndev_block_cnt	ndev_info.ndi_block_cnt
+#define ndev_lun_cnt	ndev_info.ndi_lun_cnt
+#define ndev_cell_size	ndev_info.ndi_cell_size
+#define ndev_read_start	ndev_info.ndi_read_start
 
-	/* Used by the NAND driver */
-	uint8_t		read_ecc[NAND_ECC_MAX];
-	uint8_t		calc_ecc[NAND_ECC_MAX];
+	struct disk	*ndev_disk;
 
-	uint8_t		manf_id;
-	uint8_t		dev_id;
-	uint16_t	spare_size;
-	uint32_t	page_size;
-	uint32_t	page_cnt;
-	uint32_t	block_size;
-	uint32_t	block_cnt;
-
-	/* Should we issue a NAND_CMD_READ_START before reading? */
-	char		read_start;
-
-	struct disk	*disk;
-
-	uint8_t		*spare_tmp;	/* Used for the spare data on read */
+	//uint8_t		*spare_tmp;	/* Used for the spare data on read */
 };
 
 extern uma_zone_t nand_device_zone;

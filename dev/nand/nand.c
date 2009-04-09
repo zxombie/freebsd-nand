@@ -48,23 +48,14 @@ __FBSDID("$FreeBSD$");
 #include "nandreg.h"
 #include "nandvar.h"
 
-static struct {
-	uint8_t		manf_id;
-	uint8_t		dev_id;
+static struct nand_device_info nand_chips[] = {
+	{
+	    NAND_MANF_SAMSUNG, NAND_DEV_SAMSUNG_64MB,
+	    16, 512, 32, 4096, 1,
+	    8, 1, 2, 0, "Samsung 64MiB 8bit Nand Flash",
+	},
 
-	uint16_t	spare_size;	/* Spare bytes prt page */
-	uint32_t	page_size;	/* Bytes per page (not spare) */
-	uint32_t	page_cnt;	/* Pages per block */
-	uint32_t	block_cnt;	/* Total blocks */
-
-	unsigned int	bus_width;	/* Number of bits in the bus */
-
-	char		read_start;	/* Do we need to issue a read start? */
-	const char	*name;
-} nand_chips[] = {
-	{ 0xEC, 0x76, 16, 512, 32, 4096, 8, 0, "Samsung 64MB Nand Flash" },
-
-	{ 0x00, 0x00, 0, 0, 0, 0, 0, 0, NULL },
+	{ .ndi_name = NULL, }
 };
 
 MALLOC_DECLARE(M_NAND);
@@ -104,12 +95,13 @@ nand_readid(nand_device_t ndev)
 	if (err != 0)
 		return (EIO);
 
-	ndev->manf_id = data[0];
-	ndev->dev_id = data[1];
+	ndev->ndev_manf_id = data[0];
+	ndev->ndev_dev_id = data[1];
 
-	printf("NAND: Read ID found chip %X %X\n", ndev->manf_id, ndev->dev_id);
+	printf("NAND: Read ID found chip %X %X\n", ndev->ndev_manf_id,
+	    ndev->ndev_dev_id);
 
-	return 0;
+	return (0);
 }
 
 /*
@@ -128,7 +120,7 @@ nand_read_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 	nand_address(ndev, (page >> 8) & 0xFF);
 
 	/* XXX: ONFI 1.0 says we need this but some Samsung parts don't */
-	if (ndev->read_start)
+	if (ndev->ndev_read_start)
 		nand_command(ndev, NAND_CMD_READ_START);
 
 	/* Wait for data to be read */
@@ -185,6 +177,7 @@ nand_erase_data(nand_device_t ndev, off_t block)
 static void
 nand_strategy(struct bio *bp)
 {
+	uint32_t block_size;
 	nand_device_t ndev;
 	off_t block, page;
 	uint8_t *data;
@@ -195,61 +188,58 @@ nand_strategy(struct bio *bp)
 	bp->bio_resid = bp->bio_bcount;
 	switch(bp->bio_cmd) {
 	case BIO_READ:
-		page = bp->bio_offset / ndev->page_size;
-		cnt = bp->bio_bcount / ndev->page_size;
+		page = bp->bio_offset / ndev->ndev_page_size;
+		cnt = bp->bio_bcount / ndev->ndev_page_size;
 		data = bp->bio_data;
 
-		printf("NAND: Reading %d (0x%X) pages starting at page"
-		    " %d (0x%X)\n", cnt, cnt, (int)page, (int)page);
-
 		while (cnt > 0) {
-			err = nand_read_data(ndev, page, ndev->page_size, data);
+			err = nand_read_data(ndev, page, ndev->ndev_page_size,
+			    data);
 			if (err != 0) {
 				bp->bio_error = err;
 				bp->bio_flags |= BIO_ERROR;
 				break;
 			}
 
-			bp->bio_resid -= ndev->page_size;
-			data += ndev->page_size;
+			bp->bio_resid -= ndev->ndev_page_size;
+			data += ndev->ndev_page_size;
 			page++;
 			cnt--;
 		}
 		break;
 
 	case BIO_WRITE:
-		page = bp->bio_offset / ndev->page_size;
-		cnt = bp->bio_bcount / ndev->page_size;
+		page = bp->bio_offset / ndev->ndev_page_size;
+		cnt = bp->bio_bcount / ndev->ndev_page_size;
 		data = bp->bio_data;
 
-		printf("NAND: Writing %d (0x%X) pages starting at page"
-		    " %d (0x%X)\n", cnt, cnt, (int)page, (int)page);
-
 		while (cnt > 0) {
-			err = nand_write_data(ndev, page, ndev->page_size,data);
+			err = nand_write_data(ndev, page, ndev->ndev_page_size,
+			    data);
 			if (err != 0) {
 				bp->bio_error = err;
 				bp->bio_flags |= BIO_ERROR;
 				break;
 			}
 
-			bp->bio_resid -= ndev->page_size;
-			data += ndev->page_size;
+			bp->bio_resid -= ndev->ndev_page_size;
+			data += ndev->ndev_page_size;
 			page++;
 			cnt--;
 		}
 		break;
 
 	case BIO_DELETE:
-		block = bp->bio_offset / ndev->block_size;
-		cnt = bp->bio_bcount / ndev->block_size;
+		block_size = ndev->ndev_page_cnt * ndev->ndev_page_size;
+		block = bp->bio_offset / block_size;
+		cnt = bp->bio_bcount / block_size;
 
 		/*
 		 * Deletes must be on a block boundry
 		 * and be the size of a block
 		 */
-		if (((block % ndev->block_size) != 0) ||
-		    ((bp->bio_bcount % ndev->block_size) != 0)) {
+		if (((block % block_size) != 0) ||
+		    ((bp->bio_bcount % block_size) != 0)) {
 			bp->bio_error = ENOTSUP;
 			bp->bio_flags |= BIO_ERROR;
 			break;
@@ -257,7 +247,7 @@ nand_strategy(struct bio *bp)
 
 		while (cnt > 0) {
 			nand_erase_data(ndev, block);
-			bp->bio_resid -= ndev->block_size;
+			bp->bio_resid -= block_size;
 			block++;
 			cnt--;
 		}
@@ -289,59 +279,58 @@ nand_attach(nand_device_t ndev)
 {
 	int err, i;
 
-	printf("NAND: Reseting chip\n");
+	/* Set to an 8 bit bus until we know the correct size */
+	ndev->ndev_cell_size = 8;
+
 	err = nand_command(ndev, NAND_CMD_RESET);
 	if (err != 0)
 		goto out;
 
 	/* Find which part we have */
 	/* TODO: Move this to probe? */
-	printf("NAND: Reading NAND ID\n");
 	err = nand_readid(ndev);
 	if (err != 0)
 		goto out;
-	for (i = 0; nand_chips[i].name != NULL; i++) {
-		if (nand_chips[i].manf_id == ndev->manf_id &&
-		    nand_chips[i].dev_id == ndev->dev_id) {
-			ndev->spare_size = nand_chips[i].spare_size;
-			ndev->page_size = nand_chips[i].page_size;
-			ndev->page_cnt = nand_chips[i].page_cnt;
-			ndev->block_size = ndev->page_size * ndev->page_cnt;
-			ndev->block_cnt = nand_chips[i].block_cnt;
-			ndev->ndev_width = nand_chips[i].bus_width;
-			ndev->read_start = nand_chips[i].read_start;
+
+	/* Find if we know about this part */
+	for (i = 0; nand_chips[i].ndi_name != NULL; i++) {
+		if (nand_chips[i].ndi_manf_id == ndev->ndev_manf_id &&
+		    nand_chips[i].ndi_dev_id == ndev->ndev_dev_id) {
+			memcpy(&ndev->ndev_info, &nand_chips[i],
+			    sizeof(struct nand_device_info));
 			break;
 		}
 	}
-	if (nand_chips[i].name == NULL) {
+	if (nand_chips[i].ndi_name == NULL) {
 		printf("NAND: manufacturer 0x%x device 0x%x is not supported\n",
-		    ndev->manf_id, ndev->dev_id);
+		    ndev->ndev_manf_id, ndev->ndev_dev_id);
 		err = ENODEV;
 
 		goto out;
 	}
 
-	ndev->spare_tmp = malloc(ndev->spare_size, M_NAND, M_WAITOK);
+	//ndev->spare_tmp = malloc(ndev->spare_size, M_NAND, M_WAITOK);
 
-	ndev->disk = disk_alloc();
-	ndev->disk->d_name = "nand";
-	ndev->disk->d_unit = next_unit++;
+	ndev->ndev_disk = disk_alloc();
+	ndev->ndev_disk->d_name = "nand";
+	ndev->ndev_disk->d_unit = next_unit++;
 
-	ndev->disk->d_strategy = nand_strategy;
+	ndev->ndev_disk->d_strategy = nand_strategy;
 
-	ndev->disk->d_sectorsize = ndev->page_size;
-	ndev->disk->d_maxsize = ndev->block_size;
+	ndev->ndev_disk->d_sectorsize = ndev->ndev_page_size;
+	/* Limit to 1 block */
+	ndev->ndev_disk->d_maxsize = ndev->ndev_page_size * ndev->ndev_page_cnt;
 
-	/* We ignore the spare as it is or out of band data */
-	ndev->disk->d_mediasize = ndev->block_cnt * ndev->block_size;
+	/* We ignore the spare as it is out of band data */
+	ndev->ndev_disk->d_mediasize = ndev->ndev_lun_cnt *
+	    ndev->ndev_block_cnt * ndev->ndev_page_cnt * ndev->ndev_page_size;
 
-	ndev->disk->d_drv1 = ndev;
-	disk_create(ndev->disk, DISK_VERSION);
+	ndev->ndev_disk->d_drv1 = ndev;
+	disk_create(ndev->ndev_disk, DISK_VERSION);
 
 out:
 	if (err != 0) {
-		free(ndev->spare_tmp, M_NAND);
-		ndev->spare_tmp = NULL;
+		nand_detach(ndev);
 	}
 	return (err);
 }
@@ -350,10 +339,14 @@ int
 nand_detach(nand_device_t ndev)
 {
 	/* TODO */
-	if (ndev->disk != NULL)
-		disk_destroy(ndev->disk);
+	if (ndev->ndev_disk != NULL) {
+		disk_destroy(ndev->ndev_disk);
+		ndev->ndev_disk = NULL;
+	}
 
-	free(ndev->spare_tmp, M_NAND);
+	//free(ndev->spare_tmp, M_NAND);
+	//ndev->spare_tmp = NULL;
+
 	return (0);
 }
 

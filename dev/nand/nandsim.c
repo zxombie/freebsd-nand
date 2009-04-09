@@ -383,7 +383,7 @@ nandsim_read(nand_device_t ndev, size_t len, uint8_t *data)
 		break;
 
 	case NAND_CMD_READ:
-		switch(ndev->ndev_width) {
+		switch(ndev->ndev_cell_size) {
 		case 8:
 		case 16:
 			printf("NANDSIM: nandsim_read: Read page %X\n",
@@ -395,12 +395,12 @@ nandsim_read(nand_device_t ndev, size_t len, uint8_t *data)
 			    (unsigned int)real_address);
 
 			/* The length is in terms of ndev->ndev_width bits */
-			len = len * ndev->ndev_width / 8;
+			len = len * ndev->ndev_cell_size / 8;
 			memcpy(data, &nand_chip.data[real_address], len);
 			break;
 		default:
 			printf("NANDSIM: nandsim_read: Unknown bus width %d\n",
-			    ndev->ndev_width);
+			    ndev->ndev_cell_size);
 			RESET_STATE();
 			return (EIO);
 		}
@@ -439,7 +439,7 @@ nandsim_write(nand_device_t ndev, size_t len, uint8_t *data)
 
 	switch (nand_chip.cmd[0]) {
 	case NAND_CMD_PROGRAM:
-		switch(ndev->ndev_width) {
+		switch(ndev->ndev_cell_size) {
 		case 8:
 		case 16:
 			GET_OFFSET(real_address, len);
@@ -451,7 +451,7 @@ nandsim_write(nand_device_t ndev, size_t len, uint8_t *data)
 			 * The length is in terms of ndev->ndev_width bits.
 			 * Adjust the length to be in terms of 8 bits.
 			 */
-			len = len * ndev->ndev_width / 8;
+			len = len * ndev->ndev_cell_size / 8;
 
 			/*
 			 * Iterate through each byte anding in the new
@@ -465,7 +465,7 @@ nandsim_write(nand_device_t ndev, size_t len, uint8_t *data)
 		default:
 			printf("NANDSIM: nandsim_write: "
 			    "Write of unknown bus width %d\n",
-			    ndev->ndev_width);
+			    ndev->ndev_cell_size);
 			RESET_STATE();
 			return (EIO);
 		}

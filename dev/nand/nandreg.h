@@ -43,5 +43,9 @@
 
 #define NAND_CMD_RESET	0xFF
 
+/* Device identification */
+#define NAND_MANF_SAMSUNG	0xEC
+#define  NAND_DEV_SAMSUNG_64MB	0x76 /* 64MiB 8bit 3.3v */
+
 #endif
 

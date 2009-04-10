@@ -78,7 +78,9 @@ struct nand_device {
 #define ndev_lun_cnt	ndev_info.ndi_lun_cnt
 #define ndev_cell_size	ndev_info.ndi_cell_size
 #define ndev_read_start	ndev_info.ndi_read_start
+#define ndev_name	ndev_info.ndi_name
 
+	device_t	ndev_dev;
 	struct disk	*ndev_disk;
 
 	//uint8_t		*spare_tmp;	/* Used for the spare data on read */

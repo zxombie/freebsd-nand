@@ -41,8 +41,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/lock.h>
 #include <sys/mutex.h>
 
-#include <vm/uma.h>
-
 #include <geom/geom_disk.h>
 
 #include "nandreg.h"

@@ -28,6 +28,8 @@
 #ifndef DEV_NAND_NANDVAR_H
 #define DEV_NAND_NANDVAR_H
 
+#include <vm/uma.h>
+
 struct nand_driver;
 struct nand_device;
 

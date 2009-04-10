@@ -34,8 +34,6 @@ __FBSDID("$FreeBSD$");
 #include <sys/malloc.h>
 #include <sys/module.h>
 
-#include <vm/uma.h>
-
 #include <geom/geom.h>
 #include <geom/geom_disk.h>
 #include <geom/geom_vfs.h>

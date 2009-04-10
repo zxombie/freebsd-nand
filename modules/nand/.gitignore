@@ -1,0 +1,5 @@
+@
+*.o
+*.ko
+export_syms
+machine

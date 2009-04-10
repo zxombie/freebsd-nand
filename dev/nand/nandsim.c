@@ -154,7 +154,7 @@ nandsim_command(nand_device_t ndev, uint8_t cmd)
 	/* Check if we are not able to handle a command */
 	if (nand_chip.incmd == 0) {
 		printf("NANDSIM: nandsim_command: "
-		    "Got a command when we were not expecting it\n");
+		    "Got a command when we were not expecting it: 0x%X\n", cmd);
 		RESET_STATE();
 		return (EIO);
 	}

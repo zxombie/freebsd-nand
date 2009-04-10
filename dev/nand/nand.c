@@ -52,6 +52,11 @@ static struct nand_device_info nand_chips[] = {
 	    16, 512, 32, 4096, 1,
 	    8, 1, 2, 0, "Samsung 64MiB 8bit Nand Flash",
 	},
+	{
+	    NAND_MANF_SAMSUNG, NAND_DEV_SAMSUNG_32MB,
+	    16, 512, 32, 2048, 1,
+	    8, 1, 2, 0, "Samsung 32MiB 8bit Nand Flash",
+	},
 
 	{ .ndi_name = NULL, }
 };

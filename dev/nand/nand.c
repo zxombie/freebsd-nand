@@ -127,7 +127,7 @@ nand_read_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 		nand_command(ndev, NAND_CMD_READ_START);
 
 	/* Wait for data to be read */
-	DELAY(20);
+	nand_wait_rnb(ndev);
 
 	nand_read(ndev, len, data);
 
@@ -155,11 +155,11 @@ nand_write_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 	nand_address(ndev, (page >> 0) & 0xFF);
 	nand_address(ndev, (page >> 8) & 0xFF);
 
-	DELAY(20);
-
 	nand_write(ndev, len, data);
 
 	nand_command(ndev, NAND_CMD_PROGRAM_END);
+
+	/* No RnB check as we can let it finish while we do other work */
 
 	return (err);
 }
@@ -174,7 +174,7 @@ nand_erase_data(nand_device_t ndev, off_t block)
 
 	nand_command(ndev, NAND_CMD_PROGRAM_END);
 
-	DELAY(20);
+	nand_wait_rnb(ndev);
 }
 
 static void
@@ -217,6 +217,9 @@ nand_strategy(struct bio *bp)
 		data = bp->bio_data;
 
 		while (cnt > 0) {
+			/* Wait for any previous commands to finish */
+			nand_wait_rnb(ndev);
+
 			err = nand_write_data(ndev, page, ndev->ndev_page_size,
 			    data);
 			if (err != 0) {
@@ -230,6 +233,8 @@ nand_strategy(struct bio *bp)
 			page++;
 			cnt--;
 		}
+		/* Ensure the write has finished */
+		nand_wait_rnb(ndev);
 		break;
 
 	case BIO_DELETE:
@@ -286,6 +291,7 @@ nand_attach(nand_device_t ndev)
 	ndev->ndev_cell_size = 8;
 
 	err = nand_command(ndev, NAND_CMD_RESET);
+	nand_wait_rnb(ndev);
 	if (err != 0)
 		goto out;
 

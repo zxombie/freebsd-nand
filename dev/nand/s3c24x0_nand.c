@@ -56,11 +56,13 @@ static int	s3c24x0_nand_command(nand_device_t, uint8_t);
 static int	s3c24x0_nand_address(nand_device_t, uint8_t);
 static int	s3c24x0_nand_read(nand_device_t, size_t, uint8_t *);
 static int	s3c24x0_nand_write(nand_device_t, size_t, uint8_t *);
+static void	s3c24x0_wait_rnb(nand_device_t);
 
 static struct nand_driver s3c24x0_nand_dri = {
 	.ndri_command = s3c24x0_nand_command,
 	.ndri_address = s3c24x0_nand_address,
 	.ndri_read = s3c24x0_nand_read,
+	.ndri_wait_rnb = s3c24x0_wait_rnb,
 	.ndri_write = s3c24x0_nand_write,
 };
 
@@ -142,20 +144,10 @@ s3c24x0_nand_read(nand_device_t ndev, size_t len, uint8_t *data)
 	struct s3c24x0_nand_softc *sc = device_get_softc(ndev->ndev_dev);
 	bus_space_handle_t ioh;
 	bus_space_tag_t iot;
-	int timeout;
 	size_t pos;
 
 	iot = sc->sc_sx.sc_iot;
 	ioh = sc->sc_nand_ioh;
-
-	/* Wait for RnB */
-	/* TODO: Move this to a separate callback */
-	timeout = 16;
-	while (--timeout) {
-		if (bus_space_read_1(iot, ioh, NANDFC_NFSTAT) & NFSTAT_READY)
-			break;
-		DELAY(1);
-	}
 
 	for (pos = 0; pos < len; pos++) {
 		data[pos] = bus_space_read_1(iot, ioh, NANDFC_NFDATA);
@@ -168,6 +160,25 @@ static int
 s3c24x0_nand_write(nand_device_t ndev, size_t len, uint8_t *data)
 {
 	return (ENXIO);
+}
+
+static void
+s3c24x0_wait_rnb(nand_device_t ndev)
+{
+	struct s3c24x0_nand_softc *sc = device_get_softc(ndev->ndev_dev);
+	bus_space_handle_t ioh;
+	bus_space_tag_t iot;
+	int timeout;
+
+	iot = sc->sc_sx.sc_iot;
+	ioh = sc->sc_nand_ioh;
+
+	timeout = 16;
+	while (--timeout > 0) {
+		if (bus_space_read_1(iot, ioh, NANDFC_NFSTAT) & NFSTAT_READY)
+			break;
+		DELAY(1);
+	}
 }
 
 static device_method_t s3c2410_nand_methods[] = {

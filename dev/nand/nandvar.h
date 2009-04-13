@@ -78,6 +78,8 @@ struct nand_device {
 #define ndev_block_cnt	ndev_info.ndi_block_cnt
 #define ndev_lun_cnt	ndev_info.ndi_lun_cnt
 #define ndev_cell_size	ndev_info.ndi_cell_size
+#define ndev_column_cycles ndev_info.ndi_column_cycles
+#define ndev_row_cycles	ndev_info.ndi_row_cycles
 #define ndev_read_start	ndev_info.ndi_read_start
 #define ndev_name	ndev_info.ndi_name
 

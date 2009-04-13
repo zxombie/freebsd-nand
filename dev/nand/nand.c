@@ -50,7 +50,7 @@ static struct nand_device_info nand_chips[] = {
 	{
 	    NAND_MANF_SAMSUNG, NAND_DEV_SAMSUNG_64MB,
 	    16, 512, 32, 4096, 1,
-	    8, 1, 2, 0, "Samsung 64MiB 8bit Nand Flash",
+	    8, 1, 3, 0, "Samsung 64MiB 8bit Nand Flash",
 	},
 	{
 	    NAND_MANF_SAMSUNG, NAND_DEV_SAMSUNG_32MB,
@@ -113,14 +113,16 @@ nand_readid(nand_device_t ndev)
 static int
 nand_read_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 {
-	int err = 0;
+	int err = 0, i;
 
 	nand_command(ndev, NAND_CMD_READ);
 
-	/* This will only work with 512 byte pages */
-	nand_address(ndev, 0x00);
-	nand_address(ndev, (page >> 0) & 0xFF);
-	nand_address(ndev, (page >> 8) & 0xFF);
+	/* We always wan't the start of the page */
+	for (i = 0; i < ndev->ndev_column_cycles; i++)
+		nand_address(ndev, 0x00);
+	/* Write the page address */
+	for (i = 0; i < ndev->ndev_row_cycles; i++, page >>= 8)
+		nand_address(ndev, page & 0xFF);
 
 	/* XXX: ONFI 1.0 says we need this but some Samsung parts don't */
 	if (ndev->ndev_read_start)

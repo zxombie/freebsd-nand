@@ -91,9 +91,11 @@ nand_readid(nand_device_t ndev)
 	int err;
 	uint8_t data[2];
 
+	nand_wait_select(ndev, 1);
 	err = nand_command(ndev, NAND_CMD_READID);
 	err += nand_address(ndev, NAND_READID_MANFID);
 	err += nand_read(ndev, 2, data);
+	nand_wait_select(ndev, 0);
 
 	if (err != 0)
 		return (EIO);
@@ -197,6 +199,7 @@ nand_strategy(struct bio *bp)
 		cnt = bp->bio_bcount / ndev->ndev_page_size;
 		data = bp->bio_data;
 
+		nand_wait_select(ndev, 1);
 		while (cnt > 0) {
 			err = nand_read_data(ndev, page, ndev->ndev_page_size,
 			    data);
@@ -211,6 +214,7 @@ nand_strategy(struct bio *bp)
 			page++;
 			cnt--;
 		}
+		nand_wait_select(ndev, 0);
 		break;
 
 	case BIO_WRITE:
@@ -218,6 +222,7 @@ nand_strategy(struct bio *bp)
 		cnt = bp->bio_bcount / ndev->ndev_page_size;
 		data = bp->bio_data;
 
+		nand_wait_select(ndev, 1);
 		while (cnt > 0) {
 			/* Wait for any previous commands to finish */
 			nand_wait_rnb(ndev);
@@ -237,6 +242,7 @@ nand_strategy(struct bio *bp)
 		}
 		/* Ensure the write has finished */
 		nand_wait_rnb(ndev);
+		nand_wait_select(ndev, 0);
 		break;
 
 	case BIO_DELETE:
@@ -255,12 +261,14 @@ nand_strategy(struct bio *bp)
 			break;
 		}
 
+		nand_wait_select(ndev, 1);
 		while (cnt > 0) {
 			nand_erase_data(ndev, block);
 			bp->bio_resid -= block_size;
 			block++;
 			cnt--;
 		}
+		nand_wait_select(ndev, 0);
 		break;
 
 	default:

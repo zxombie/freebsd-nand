@@ -37,6 +37,7 @@ typedef struct nand_driver* nand_driver_t;
 typedef struct nand_device* nand_device_t;
 
 struct nand_driver {
+	int (*ndri_select)(nand_device_t, int);
 	int (*ndri_command)(nand_device_t, uint8_t);
 	int (*ndri_address)(nand_device_t, uint8_t);
 	int (*ndri_read)(nand_device_t, size_t, uint8_t *);
@@ -98,6 +99,11 @@ do { \
 
 #define nand_free_device(ndev) uma_zfree(ata_request_zone, ndev)
 
+#define nand_wait_select(ndev, enable)				\
+do {								\
+	if (ndev->ndev_driver->ndri_select != NULL)		\
+		ndev->ndev_driver->ndri_select(ndev, enable);	\
+} while (0)
 #define nand_command(ndev, data) ndev->ndev_driver->ndri_command(ndev, data)
 #define nand_address(ndev, data) ndev->ndev_driver->ndri_address(ndev, data)
 #define nand_read(ndev, len, data) \

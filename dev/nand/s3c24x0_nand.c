@@ -39,6 +39,7 @@ __FBSDID("$FreeBSD$");
 #include <dev/nand/nandvar.h>
 
 #include <arm/s3c2xx0/s3c2410reg.h>
+#include <arm/s3c2xx0/s3c2440reg.h>
 #include <arm/s3c2xx0/s3c2410var.h>
 
 struct s3c24x0_nand_softc {
@@ -47,11 +48,19 @@ struct s3c24x0_nand_softc {
 	struct nand_device	 sc_nand_dev;
 
 	bus_space_handle_t	 sc_nand_ioh;
+
+	bus_size_t		 sc_cmd_reg;
+	bus_size_t		 sc_addr_reg;
+	bus_size_t		 sc_data_reg;
+	bus_size_t		 sc_stat_reg;
+	bus_size_t		 sc_ce_reg;
+	uint32_t		 sc_ce_mask;
 };
 
 static int	s3c24x0_nand_probe(device_t);
 static int	s3c24x0_nand_attach(device_t);
 
+static int	s3c24x0_select(nand_device_t, int);
 static int	s3c24x0_nand_command(nand_device_t, uint8_t);
 static int	s3c24x0_nand_address(nand_device_t, uint8_t);
 static int	s3c24x0_nand_read(nand_device_t, size_t, uint8_t *);
@@ -59,6 +68,7 @@ static int	s3c24x0_nand_write(nand_device_t, size_t, uint8_t *);
 static void	s3c24x0_wait_rnb(nand_device_t);
 
 static struct nand_driver s3c24x0_nand_dri = {
+	.ndri_select = s3c24x0_select,
 	.ndri_command = s3c24x0_nand_command,
 	.ndri_address = s3c24x0_nand_address,
 	.ndri_read = s3c24x0_nand_read,
@@ -66,39 +76,84 @@ static struct nand_driver s3c24x0_nand_dri = {
 	.ndri_write = s3c24x0_nand_write,
 };
 
+static void
+s3c24x0_nand_init(struct s3c24x0_nand_softc *sc)
+{
+	uint32_t reg;
+	bus_space_handle_t ioh;
+	bus_space_tag_t iot;
+
+	iot = sc->sc_sx.sc_iot;
+	ioh = sc->sc_nand_ioh;
+
+	/* 
+	 * Ensure the NAND is enabled and on
+	 */
+	switch (s3c2xx0_softc->sc_cpu) {
+	case CPU_S3C2440:
+		reg = S3C2440_NFCONT_ENABLE;
+		bus_space_write_4(iot, ioh, S3C2440_NANDFC_NFCONT, reg);
+
+		sc->sc_cmd_reg = S3C2440_NANDFC_NFCMMD;
+		sc->sc_addr_reg = S3C2440_NANDFC_NFADDR;
+		sc->sc_data_reg = S3C2440_NANDFC_NFDATA;
+		sc->sc_stat_reg = S3C2440_NANDFC_NFSTAT;
+		sc->sc_ce_reg = S3C2440_NANDFC_NFCONT;
+		sc->sc_ce_mask = S3C2440_NFCONT_NCE;
+		break;
+	case CPU_S3C2410:
+		reg = bus_space_read_4(iot, ioh, NANDFC_NFCONF);
+		reg |= S3C2410_NFCONF_ENABLE;
+		bus_space_write_4(iot, ioh, NANDFC_NFCONF, reg);
+
+		sc->sc_cmd_reg = S3C2410_NANDFC_NFCMD;
+		sc->sc_addr_reg = S3C2410_NANDFC_NFADDR;
+		sc->sc_data_reg = S3C2410_NANDFC_NFDATA;
+		sc->sc_stat_reg = S3C2410_NANDFC_NFSTAT;
+		sc->sc_ce_reg = NANDFC_NFCONF;
+		sc->sc_ce_mask = S3C2410_NFCONF_FCE;
+		break;
+	default:
+		panic("Unknown processor");
+	}
+
+}
+
 static int
 s3c24x0_nand_probe(device_t dev)
 {
 	struct s3c24x0_nand_softc *sc = device_get_softc(dev);
+	int ret;
 
+	sc->sc_sx.sc_iot = &s3c2xx0_bs_tag;
+	if (bus_space_map(sc->sc_sx.sc_iot, S3C24X0_NANDFC_BASE,
+	    S3C2410_NANDFC_SIZE * 2, 0, &sc->sc_nand_ioh))
+		panic("Cannot map NAND registers");
+
+	/* Init the NAND Controller enough to talk to the device */
+	s3c24x0_nand_init(sc);
 	sc->sc_nand_dev.ndev_driver = &s3c24x0_nand_dri;
 	sc->sc_nand_dev.ndev_dev = dev;
 
-	return nand_probe(&sc->sc_nand_dev);
+	ret = nand_probe(&sc->sc_nand_dev);
+
+	bus_space_unmap(sc->sc_sx.sc_iot, sc->sc_nand_ioh, S3C2410_NANDFC_SIZE);
+
+	return ret;
 }
 
 static int
 s3c24x0_nand_attach(device_t dev)
 {
 	struct s3c24x0_nand_softc *sc = device_get_softc(dev);
-	bus_space_handle_t ioh;
-	bus_space_tag_t iot;
-	uint32_t reg;
 	int err;
 
-	sc->sc_sx.sc_iot = iot = &s3c2xx0_bs_tag;
-
 	if (bus_space_map(sc->sc_sx.sc_iot, S3C24X0_NANDFC_BASE,
-	    S3C2410_NANDFC_SIZE, 0, &sc->sc_nand_ioh))
+	    S3C2410_NANDFC_SIZE * 2, 0, &sc->sc_nand_ioh))
 		panic("Cannot map NAND registers");
 
-	ioh = sc->sc_nand_ioh;
-
-	/* Ensure the NAND is enabled and on */
-	reg = bus_space_read_4(iot, ioh, NANDFC_NFCONF);
-	reg |= NFCONF_ENABLE;
-	reg &= ~NFCONF_FCE;
-	bus_space_write_4(iot, ioh, NANDFC_NFCONF, reg);
+	/* Make sure the Flash is in a consistent state before use */
+	s3c24x0_nand_init(sc);
 
 	err = nand_attach(&sc->sc_nand_dev);
 	if (err != 0) {
@@ -106,6 +161,27 @@ s3c24x0_nand_attach(device_t dev)
 	}
 
 	return (err);
+}
+
+static int
+s3c24x0_select(nand_device_t ndev, int enable)
+{
+	struct s3c24x0_nand_softc *sc = device_get_softc(ndev->ndev_dev);
+	bus_space_handle_t ioh;
+	bus_space_tag_t iot;
+	uint32_t reg;
+
+	iot = sc->sc_sx.sc_iot;
+	ioh = sc->sc_nand_ioh;
+
+	reg = bus_space_read_4(iot, ioh, sc->sc_ce_reg);
+	if (enable)
+		reg &= ~(sc->sc_ce_mask);
+	else
+		reg |= sc->sc_ce_mask;
+	bus_space_write_4(iot, ioh, sc->sc_ce_reg, reg);
+
+	return (0);
 }
 
 static int
@@ -118,7 +194,7 @@ s3c24x0_nand_command(nand_device_t ndev, uint8_t cmd)
 	iot = sc->sc_sx.sc_iot;
 	ioh = sc->sc_nand_ioh;
 
-	bus_space_write_1(iot, ioh, NANDFC_NFCMD, cmd);
+	bus_space_write_1(iot, ioh, sc->sc_cmd_reg, cmd);
 
 	return (0);
 }
@@ -133,7 +209,7 @@ s3c24x0_nand_address(nand_device_t ndev, uint8_t addr)
 	iot = sc->sc_sx.sc_iot;
 	ioh = sc->sc_nand_ioh;
 
-	bus_space_write_1(iot, ioh, NANDFC_NFADDR, addr);
+	bus_space_write_1(iot, ioh, sc->sc_addr_reg, addr);
 
 	return (0);
 }
@@ -150,7 +226,7 @@ s3c24x0_nand_read(nand_device_t ndev, size_t len, uint8_t *data)
 	ioh = sc->sc_nand_ioh;
 
 	for (pos = 0; pos < len; pos++) {
-		data[pos] = bus_space_read_1(iot, ioh, NANDFC_NFDATA);
+		data[pos] = bus_space_read_1(iot, ioh, sc->sc_data_reg);
 	}
 
 	return (0);
@@ -175,7 +251,7 @@ s3c24x0_wait_rnb(nand_device_t ndev)
 
 	timeout = 16;
 	while (--timeout > 0) {
-		if (bus_space_read_1(iot, ioh, NANDFC_NFSTAT) & NFSTAT_READY)
+		if (bus_space_read_1(iot, ioh, sc->sc_stat_reg) & NFSTAT_READY)
 			break;
 		DELAY(1);
 	}

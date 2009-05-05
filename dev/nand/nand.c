@@ -48,6 +48,11 @@ __FBSDID("$FreeBSD$");
 
 static struct nand_device_info nand_chips[] = {
 	{
+	    NAND_MANF_SAMSUNG, NAND_DEV_SAMSUNG_256MB,
+	    64, 2048, 64, 2048, 1,
+	    8, 2, 3, 1, "Samsung 256MiB 8bit Nand Flash",
+	},
+	{
 	    NAND_MANF_SAMSUNG, NAND_DEV_SAMSUNG_64MB,
 	    16, 512, 32, 4096, 1,
 	    8, 1, 3, 0, "Samsung 64MiB 8bit Nand Flash",

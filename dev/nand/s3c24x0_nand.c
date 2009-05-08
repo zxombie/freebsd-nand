@@ -123,11 +123,23 @@ static int
 s3c24x0_nand_probe(device_t dev)
 {
 	struct s3c24x0_nand_softc *sc = device_get_softc(dev);
+	bus_size_t size;
 	int ret;
 
+	switch (s3c2xx0_softc->sc_cpu) {
+	case CPU_S3C2410:
+		size = S3C2410_NANDFC_SIZE;
+		break;
+	case CPU_S3C2440:
+		size = S3C2440_NANDFC_SIZE;
+		break;
+	default:
+		return (ENXIO);
+	}
+
 	sc->sc_sx.sc_iot = &s3c2xx0_bs_tag;
-	if (bus_space_map(sc->sc_sx.sc_iot, S3C24X0_NANDFC_BASE,
-	    S3C2410_NANDFC_SIZE * 2, 0, &sc->sc_nand_ioh))
+	if (bus_space_map(sc->sc_sx.sc_iot, S3C24X0_NANDFC_BASE, size, 0,
+	    &sc->sc_nand_ioh))
 		panic("Cannot map NAND registers");
 
 	/* Init the NAND Controller enough to talk to the device */

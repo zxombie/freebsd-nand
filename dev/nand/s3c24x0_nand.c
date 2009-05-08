@@ -247,7 +247,19 @@ s3c24x0_nand_read(nand_device_t ndev, size_t len, uint8_t *data)
 static int
 s3c24x0_nand_write(nand_device_t ndev, size_t len, uint8_t *data)
 {
-	return (ENXIO);
+	struct s3c24x0_nand_softc *sc = device_get_softc(ndev->ndev_dev);
+	bus_space_handle_t ioh;
+	bus_space_tag_t iot;
+	size_t pos;
+
+	iot = sc->sc_sx.sc_iot;
+	ioh = sc->sc_nand_ioh;
+
+	for (pos = 0; pos < len; pos++) {
+		bus_space_write_1(iot, ioh, sc->sc_data_reg, data[pos]);
+	}
+
+	return (0);
 }
 
 static void

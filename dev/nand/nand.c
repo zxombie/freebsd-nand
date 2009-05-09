@@ -108,9 +108,6 @@ nand_readid(nand_device_t ndev)
 	ndev->ndev_manf_id = data[0];
 	ndev->ndev_dev_id = data[1];
 
-	printf("NAND: Read ID found chip %X %X\n", ndev->ndev_manf_id,
-	    ndev->ndev_dev_id);
-
 	return (0);
 }
 
@@ -288,19 +285,13 @@ nand_strategy(struct bio *bp)
 int
 nand_probe(nand_device_t ndev)
 {
+	int err, i;
+
 	if (ndev->ndev_driver->ndri_command == NULL ||
 	    ndev->ndev_driver->ndri_address == NULL ||
 	    ndev->ndev_driver->ndri_read == NULL ||
 	    ndev->ndev_driver->ndri_write == NULL)
 		return (EDOOFUS);
-
-	return (0);
-}
-
-int
-nand_attach(nand_device_t ndev)
-{
-	int err, i;
 
 	/* Set to an 8 bit bus until we know the correct size */
 	ndev->ndev_cell_size = 8;
@@ -308,36 +299,47 @@ nand_attach(nand_device_t ndev)
 	err = nand_command(ndev, NAND_CMD_RESET);
 	nand_wait_rnb(ndev);
 	if (err != 0)
-		goto out;
+		return (EIO);
 
 	/* Find which part we have */
-	/* TODO: Move this to probe? */
 	err = nand_readid(ndev);
 	if (err != 0)
-		goto out;
+		return (EIO);
 
 	/* Find if we know about this part */
-	for (i = 0; nand_chips[i].ndi_name != NULL; i++) {
+	for (i = 0; nand_chips[i].ndi_name != NULL; i++)
 		if (nand_chips[i].ndi_manf_id == ndev->ndev_manf_id &&
 		    nand_chips[i].ndi_dev_id == ndev->ndev_dev_id) {
 			memcpy(&ndev->ndev_info, &nand_chips[i],
 			    sizeof(struct nand_device_info));
 			break;
 		}
-	}
-	if (nand_chips[i].ndi_name == NULL) {
-		printf("NAND: manufacturer 0x%x device 0x%x is not supported\n",
-		    ndev->ndev_manf_id, ndev->ndev_dev_id);
-		err = ENODEV;
 
-		goto out;
+	if (nand_chips[i].ndi_name == NULL) {
+		printf("nand: manufacturer 0x%x device 0x%x is not supported\n",
+		    ndev->ndev_manf_id, ndev->ndev_dev_id);
+		return (ENODEV);
 	}
+
+	return (0);
+}
+
+int
+nand_attach(nand_device_t ndev)
+{
+	int err;
+
+	err = nand_command(ndev, NAND_CMD_RESET);
+	nand_wait_rnb(ndev);
+	if (err != 0)
+		goto out;
 
 	//ndev->spare_tmp = malloc(ndev->spare_size, M_NAND, M_WAITOK);
 
 	ndev->ndev_disk = disk_alloc();
 	ndev->ndev_disk->d_name = "nand";
 	ndev->ndev_disk->d_unit = next_unit++;
+	ndev->ndev_disk->d_flags = DISKFLAG_CANDELETE;
 
 	ndev->ndev_disk->d_strategy = nand_strategy;
 

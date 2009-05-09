@@ -112,21 +112,33 @@ nand_readid(nand_device_t ndev)
 }
 
 /*
+ * Writes the address to read/write to the bus
+ */
+static inline void
+nand_write_address(nand_device_t ndev, off_t page, int with_column)
+{
+	off_t i;
+
+	if (with_column) {
+		/* We always want the start of the page */
+		for (i = 0; i < ndev->ndev_column_cycles; i++)
+			nand_address(ndev, 0x00);
+	}
+	/* Write the page address */
+	for (i = 0; i < ndev->ndev_row_cycles; i++, page >>= 8)
+		nand_address(ndev, page & 0xFF);
+}
+
+/*
  * Reads the data including spare if len is large enough from the NAND flash
  */
 static int
 nand_read_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 {
-	int err = 0, i;
+	int err = 0;
 
 	nand_command(ndev, NAND_CMD_READ);
-
-	/* We always wan't the start of the page */
-	for (i = 0; i < ndev->ndev_column_cycles; i++)
-		nand_address(ndev, 0x00);
-	/* Write the page address */
-	for (i = 0; i < ndev->ndev_row_cycles; i++, page >>= 8)
-		nand_address(ndev, page & 0xFF);
+	nand_write_address(ndev, page, 1);
 
 	/* XXX: ONFI 1.0 says we need this but some Samsung parts don't */
 	if (ndev->ndev_read_start)
@@ -152,37 +164,23 @@ nand_read_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 static int
 nand_write_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 {
-	int err = 0, i;
-
 	nand_command(ndev, NAND_CMD_PROGRAM);
-
-	for (i = 0; i < ndev->ndev_column_cycles; i++)
-		nand_address(ndev, 0x00);
-
-	for (i = 0; i < ndev->ndev_row_cycles; i++) {
-		nand_address(ndev, page & 0xFF);
-		page >>= 8;
-	}
-
+	nand_write_address(ndev, page, 1);
 	nand_write(ndev, len, data);
-
 	nand_command(ndev, NAND_CMD_PROGRAM_END);
-
 	nand_wait_rnb(ndev);
 
-	return (err);
+	/* TODO: Check SR[0] */
+
+	return (0);
 }
 
 static void
 nand_erase_data(nand_device_t ndev, off_t block)
 {
 	nand_command(ndev, NAND_CMD_ERASE);
-
-	nand_address(ndev, (block >> 0) & 0xFF);
-	nand_address(ndev, (block >> 8) & 0xFF);
-
+	nand_write_address(ndev, block, 0);
 	nand_command(ndev, NAND_CMD_PROGRAM_END);
-
 	nand_wait_rnb(ndev);
 }
 

@@ -152,20 +152,23 @@ nand_read_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 static int
 nand_write_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 {
-	int err = 0;
+	int err = 0, i;
 
 	nand_command(ndev, NAND_CMD_PROGRAM);
 
-	/* This will only work with 512 byte pages */
-	nand_address(ndev, 0x00);
-	nand_address(ndev, (page >> 0) & 0xFF);
-	nand_address(ndev, (page >> 8) & 0xFF);
+	for (i = 0; i < ndev->ndev_column_cycles; i++)
+		nand_address(ndev, 0x00);
+
+	for (i = 0; i < ndev->ndev_row_cycles; i++) {
+		nand_address(ndev, page & 0xFF);
+		page >>= 8;
+	}
 
 	nand_write(ndev, len, data);
 
 	nand_command(ndev, NAND_CMD_PROGRAM_END);
 
-	/* No RnB check as we can let it finish while we do other work */
+	nand_wait_rnb(ndev);
 
 	return (err);
 }
@@ -226,9 +229,6 @@ nand_strategy(struct bio *bp)
 
 		nand_wait_select(ndev, 1);
 		while (cnt > 0) {
-			/* Wait for any previous commands to finish */
-			nand_wait_rnb(ndev);
-
 			err = nand_write_data(ndev, page, ndev->ndev_page_size,
 			    data);
 			if (err != 0) {

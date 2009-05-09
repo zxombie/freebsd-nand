@@ -198,28 +198,6 @@ nand_strategy(struct bio *bp)
 	bp->bio_resid = bp->bio_bcount;
 	switch(bp->bio_cmd) {
 	case BIO_READ:
-		page = bp->bio_offset / ndev->ndev_page_size;
-		cnt = bp->bio_bcount / ndev->ndev_page_size;
-		data = bp->bio_data;
-
-		nand_wait_select(ndev, 1);
-		while (cnt > 0) {
-			err = nand_read_data(ndev, page, ndev->ndev_page_size,
-			    data);
-			if (err != 0) {
-				bp->bio_error = err;
-				bp->bio_flags |= BIO_ERROR;
-				break;
-			}
-
-			bp->bio_resid -= ndev->ndev_page_size;
-			data += ndev->ndev_page_size;
-			page++;
-			cnt--;
-		}
-		nand_wait_select(ndev, 0);
-		break;
-
 	case BIO_WRITE:
 		page = bp->bio_offset / ndev->ndev_page_size;
 		cnt = bp->bio_bcount / ndev->ndev_page_size;
@@ -227,8 +205,13 @@ nand_strategy(struct bio *bp)
 
 		nand_wait_select(ndev, 1);
 		while (cnt > 0) {
-			err = nand_write_data(ndev, page, ndev->ndev_page_size,
-			    data);
+			if (bp->bio_cmd == BIO_READ)
+				err = nand_read_data(ndev, page,
+				    ndev->ndev_page_size, data);
+			else
+				err = nand_write_data(ndev, page,
+				    ndev->ndev_page_size, data);
+
 			if (err != 0) {
 				bp->bio_error = err;
 				bp->bio_flags |= BIO_ERROR;
@@ -240,8 +223,6 @@ nand_strategy(struct bio *bp)
 			page++;
 			cnt--;
 		}
-		/* Ensure the write has finished */
-		nand_wait_rnb(ndev);
 		nand_wait_select(ndev, 0);
 		break;
 

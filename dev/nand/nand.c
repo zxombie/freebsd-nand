@@ -93,20 +93,12 @@ nand_correct_ecc(device_t dev, uint8_t *data, uint8_t *read_ecc,
 static int
 nand_readid(nand_device_t ndev)
 {
-	int err;
-	uint8_t data[2];
-
 	nand_wait_select(ndev, 1);
-	err = nand_command(ndev, NAND_CMD_READID);
-	err += nand_address(ndev, NAND_READID_MANFID);
-	err += nand_read(ndev, 2, data);
+	nand_command(ndev, NAND_CMD_READID);
+	nand_address(ndev, NAND_READID_MANFID);
+	nand_read_8(ndev, &ndev->ndev_manf_id);
+	nand_read_8(ndev, &ndev->ndev_dev_id);
 	nand_wait_select(ndev, 0);
-
-	if (err != 0)
-		return (EIO);
-
-	ndev->ndev_manf_id = data[0];
-	ndev->ndev_dev_id = data[1];
 
 	return (0);
 }
@@ -269,6 +261,7 @@ nand_probe(nand_device_t ndev)
 	if (ndev->ndev_driver->ndri_command == NULL ||
 	    ndev->ndev_driver->ndri_address == NULL ||
 	    ndev->ndev_driver->ndri_read == NULL ||
+	    ndev->ndev_driver->ndri_read_8 == NULL ||
 	    ndev->ndev_driver->ndri_write == NULL)
 		return (EDOOFUS);
 

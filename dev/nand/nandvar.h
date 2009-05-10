@@ -41,6 +41,7 @@ struct nand_driver {
 	int (*ndri_command)(nand_device_t, uint8_t);
 	int (*ndri_address)(nand_device_t, uint8_t);
 	int (*ndri_read)(nand_device_t, size_t, uint8_t *);
+	int (*ndri_read_8)(nand_device_t, uint8_t *);
 	int (*ndri_write)(nand_device_t, size_t, uint8_t *);
 	void (*ndri_wait_rnb)(nand_device_t);
 	int (*ndri_calc_ecc)(nand_device_t, uint8_t *);
@@ -108,6 +109,7 @@ do {								\
 #define nand_address(ndev, data) ndev->ndev_driver->ndri_address(ndev, data)
 #define nand_read(ndev, len, data) \
     ndev->ndev_driver->ndri_read(ndev, len, data)
+#define nand_read_8(ndev, data) ndev->ndev_driver->ndri_read_8(ndev, data)
 #define nand_write(ndev, len, data) \
     ndev->ndev_driver->ndri_write(ndev, len, data)
 #define nand_wait_rnb(ndev)				\

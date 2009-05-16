@@ -121,6 +121,23 @@ nand_write_address(nand_device_t ndev, off_t page, int with_column)
 		nand_address(ndev, page & 0xFF);
 }
 
+static inline uint8_t
+nand_wait_status(nand_device_t ndev)
+{
+	uint8_t status;
+
+	/* TODO: Implement in nandsim */
+	nand_command(ndev, NAND_CMD_READ_STATUS);
+	nand_read_8(ndev, &status);
+
+	while ((status & NAND_STATUS_RDY) == 0x00) {
+		DELAY(100);
+		nand_command(ndev, NAND_CMD_READ_STATUS);
+		nand_read_8(ndev, &status);
+	}
+	return status;
+}
+
 /*
  * Reads the data including spare if len is large enough from the NAND flash
  */
@@ -156,24 +173,34 @@ nand_read_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 static int
 nand_write_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 {
+	uint8_t status;
+
 	nand_command(ndev, NAND_CMD_PROGRAM);
 	nand_write_address(ndev, page, 1);
 	nand_write(ndev, len, data);
 	nand_command(ndev, NAND_CMD_PROGRAM_END);
-	nand_wait_rnb(ndev);
 
-	/* TODO: Check SR[0] */
+	status = nand_wait_status(ndev);
+	if ((status & NAND_STATUS_FAIL) == NAND_STATUS_FAIL)
+		return (EIO);
 
 	return (0);
 }
 
-static void
+static int
 nand_erase_data(nand_device_t ndev, off_t block)
 {
+	int status;
+
 	nand_command(ndev, NAND_CMD_ERASE);
 	nand_write_address(ndev, block, 0);
 	nand_command(ndev, NAND_CMD_PROGRAM_END);
-	nand_wait_rnb(ndev);
+
+	status = nand_wait_status(ndev);
+	if ((status & NAND_STATUS_FAIL) == NAND_STATUS_FAIL)
+		return (EIO);
+
+	return (0);
 }
 
 static void
@@ -236,7 +263,14 @@ nand_strategy(struct bio *bp)
 
 		nand_wait_select(ndev, 1);
 		while (cnt > 0) {
-			nand_erase_data(ndev, block);
+			err = nand_erase_data(ndev, block);
+
+			if (err != 0) {
+				bp->bio_error = err;
+				bp->bio_flags |= BIO_ERROR;
+				break;
+			}
+
 			bp->bio_resid -= block_size;
 			block++;
 			cnt--;

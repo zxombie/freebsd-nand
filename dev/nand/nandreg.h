@@ -34,6 +34,13 @@
 #define NAND_CMD_ERASE		0x60
 #define  NAND_CMD_ERASE_END	0xD0
 
+#define NAND_CMD_READ_STATUS	0x70
+#define  NAND_STATUS_FAIL	(1<<0)
+#define  NAND_STATUS_FAILC	(1<<1)
+#define  NAND_STATUS_ARDY	(1<<5)
+#define  NAND_STATUS_RDY	(1<<6)
+#define  NAND_STATUS_WP		(1<<7)
+
 #define NAND_CMD_PROGRAM	0x80
 #define  NAND_CMD_PROGRAM_END	0x10
 

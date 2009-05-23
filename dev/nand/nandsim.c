@@ -60,10 +60,12 @@ do {					\
 	nand_chip.inaddr = 0;		\
 	nand_chip.inread = 0;		\
 	nand_chip.inwrite = 0;		\
+	nand_chip.read_status = 0;	\
 					\
 	nand_chip.cmd_len = 0;		\
 	nand_chip.address = 0;		\
 	nand_chip.address_len = 0;	\
+	nand_chip.data_pos = 0;		\
 } while (0)
 
 #define CLEAR_IN_STATE()		\
@@ -93,8 +95,10 @@ static struct {
 	/* These tell us what to expect next */
 	int		incmd;		/* Are we processing a command */
 	int		inaddr;		/* Are we able to get the address */
-	int		inread;		/* Are we able to read data from NAND*/
-	int		inwrite;	/* Are we able to write data to NAND*/
+	int		inread;		/* Are we able to read data from NAND */
+	int		inwrite;	/* Are we able to write data to NAND */
+
+	int		read_status;	/* Are we in NAND_CMD_READ_STATUS */
 
 	int		read_start;	/* Expect a NAND_CMD_READ_START */
 
@@ -107,6 +111,8 @@ static struct {
 	size_t		data_len;
 	uint8_t		*data;
 
+	off_t		data_pos;	/* The offset for nand_read_8 */
+
 	uint8_t		manuf;
 	uint8_t		device;
 
@@ -116,12 +122,14 @@ static struct {
 static int nandsim_command(nand_device_t, uint8_t);
 static int nandsim_address(nand_device_t, uint8_t);
 static int nandsim_read(nand_device_t, size_t, uint8_t *);
+static int nandsim_read_8(nand_device_t, uint8_t *);
 static int nandsim_write(nand_device_t, size_t, uint8_t *);
 
 static struct nand_driver nandsim_dri = {
 	.ndri_command = nandsim_command,
 	.ndri_address = nandsim_address,
 	.ndri_read = nandsim_read,
+	.ndri_read_8 = nandsim_read_8,
 	.ndri_write = nandsim_write,
 };
 
@@ -136,10 +144,19 @@ static int
 nandsim_command(nand_device_t ndev, uint8_t cmd)
 {
 	/* Some commands may be sent with the LUN in any state */
-	if (cmd == NAND_CMD_RESET) {
+	switch(cmd) {
+	case NAND_CMD_RESET:
 		printf("NANDSIM: nandsim_command: Reset chip\n");
 		RESET_STATE();
 		return (0);
+
+	case NAND_CMD_READ_STATUS:
+		printf("NANDSIM: nandsim_command: Called read_status\n");
+		nand_chip.read_status = 1;
+		return (0);
+
+	default:
+		break;
 	}
 
 	if (nand_chip.startcmd != 0) {
@@ -338,6 +355,25 @@ nandsim_read(nand_device_t ndev, size_t len, uint8_t *data)
 	off_t real_address;
 	int i;
 
+	/*
+	 * We are attempring to read the status,
+	 * don't touch the state except on failure
+	 */
+	if (nand_chip.read_status != 0) {
+		if (len != 1) {
+			RESET_STATE();
+			return (EIO);
+		}
+
+		nand_chip.read_status = 0;
+		data[0] = NAND_STATUS_WP;
+		if (nand_chip.incmd == 0 && nand_chip.inaddr == 0 &&
+		    nand_chip.inread == 0 && nand_chip.inwrite == 0)
+			data[0] |= NAND_STATUS_RDY | NAND_STATUS_ARDY;
+
+		return (0);
+	}
+
 	if (nand_chip.inread == 0) {
 		printf("NANDSIM: nandsim_read: "
 		    "Attempting to read when we can't read\n");
@@ -352,14 +388,25 @@ nandsim_read(nand_device_t ndev, size_t len, uint8_t *data)
 		switch(nand_chip.address) {
 		case NAND_READID_MANFID:
 			/* Read the Manufacturer ID */
-			if (len > 0) {
-				data[0] = nand_chip.manuf;
-				if (len > 1)
-					data[1] = nand_chip.device;
+			if (nand_chip.data_pos > 1) {
+				printf("NANDSIM: nandsim_read: "
+				    "Too much data have already been read\n");
+				RESET_STATE();
+				return (EIO);
+			} else if (len > 0) {
+				if (nand_chip.data_pos == 0) {
+					data[0] = nand_chip.manuf;
+					if (len > 1)
+						data[1] = nand_chip.device;
+				} else if (nand_chip.data_pos == 1)
+					data[0] = nand_chip.device;
 
 				printf("NANDSIM: nandsim_read: Read chip ID (");
-				for (i = 0; i < len; i++)
-					printf("%.2X ", data[i]);
+				for (i = 0; i < len; i++) {
+					printf("%.2X", data[i]);
+					if (i != len - 1)
+						printf(" ");
+				}
 				printf(")\n");
 			} else {
 				printf("NANDSIM: nandsim_read: "
@@ -376,8 +423,8 @@ nandsim_read(nand_device_t ndev, size_t len, uint8_t *data)
 			RESET_STATE();
 			return (EIO);
 		}
-		/* TODO: Allow this to be read with 2 calls to read */
 		RESET_STATE();
+		nand_chip.inread = 1;
 		break;
 
 	case NAND_CMD_READ:
@@ -392,7 +439,7 @@ nandsim_read(nand_device_t ndev, size_t len, uint8_t *data)
 			printf("NANDSIM: nandsim_read: Reading offset %X\n",
 			    (unsigned int)real_address);
 
-			/* The length is in terms of ndev->ndev_width bits */
+			/* The length is in terms of ndev->ndi_cell_size bits */
 			len = len * ndev->ndev_cell_size / 8;
 			memcpy(data, &nand_chip.data[real_address], len);
 			break;
@@ -414,10 +461,20 @@ nandsim_read(nand_device_t ndev, size_t len, uint8_t *data)
 		RESET_STATE();
 		return (EIO);
 	}
+	nand_chip.data_pos += len;
 
 	CHECK_STATE();
 
 	return (0);
+}
+
+static int
+nandsim_read_8(nand_device_t ndev, uint8_t *data)
+{
+	/* XXX: Assumes ndev_cell_size == 8 */
+	KASSERT(ndev->ndev_cell_size == 8,
+	    ("NANDSIM: I only emulate an 8 bit device"));
+	return nandsim_read(ndev, 1, data);
 }
 
 static int

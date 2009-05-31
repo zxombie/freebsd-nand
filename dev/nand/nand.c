@@ -77,16 +77,6 @@ static int nand_read_data(nand_device_t, off_t, size_t, uint8_t *);
 
 static d_strategy_t nand_strategy;
 
-#if 0
-static inline int
-nand_correct_ecc(device_t dev, uint8_t *data, uint8_t *read_ecc,
-    uint8_t *calc_ecc)
-{
-	return NAND_CORRECT_ECC(device_get_parent(dev), data, read_ecc,
-	    calc_ecc);
-}
-#endif
-
 /*
  * Reads the device ID into the softc
  */
@@ -157,14 +147,6 @@ nand_read_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 
 	nand_read(ndev, len, data);
 
-#if 0
-	if (ndev->ecc_len > 0) {
-		/* Correct if there was a bit error */
-		nand_calc_ecc(sc->dev, sc->calc_ecc);
-		nand_read(dev, sc->spare_size, sc->spare_tmp);
-		err = nand_correct_ecc(sc->dev, data, sc->read_ecc, sc->calc_ecc);
-	}
-#endif
 
 	return (err);
 }
@@ -339,7 +321,6 @@ nand_attach(nand_device_t ndev)
 	if (err != 0)
 		goto out;
 
-	//ndev->spare_tmp = malloc(ndev->spare_size, M_NAND, M_WAITOK);
 
 	ndev->ndev_disk = disk_alloc();
 	ndev->ndev_disk->d_name = "nand";
@@ -375,8 +356,6 @@ nand_detach(nand_device_t ndev)
 		ndev->ndev_disk = NULL;
 	}
 
-	//free(ndev->spare_tmp, M_NAND);
-	//ndev->spare_tmp = NULL;
 
 	return (0);
 }

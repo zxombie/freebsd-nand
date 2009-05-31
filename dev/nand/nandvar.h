@@ -71,7 +71,6 @@ struct nand_device_info {
 	const char	*ndi_name;	/* The name of the device */
 };
 
-#define NAND_ECC_MAX 16
 struct nand_device {
 	/* Set by the NAND controller */
 	nand_driver_t	ndev_driver;
@@ -93,8 +92,6 @@ struct nand_device {
 
 	device_t	ndev_dev;
 	struct disk	*ndev_disk;
-
-	//uint8_t		*spare_tmp;	/* Used for the spare data on read */
 };
 
 extern uma_zone_t nand_device_zone;

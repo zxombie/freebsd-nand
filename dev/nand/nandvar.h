@@ -36,15 +36,21 @@ struct nand_device;
 typedef struct nand_driver* nand_driver_t;
 typedef struct nand_device* nand_device_t;
 
+/*
+ * Used to hold callbacks to the NAND controller.
+ * Not all functions need to be implemented.
+ * (R) Reqired
+ * (O) Optional
+ */
 struct nand_driver {
-	int (*ndri_select)(nand_device_t, int);
-	int (*ndri_command)(nand_device_t, uint8_t);
-	int (*ndri_address)(nand_device_t, uint8_t);
-	int (*ndri_read)(nand_device_t, size_t, uint8_t *);
-	int (*ndri_read_8)(nand_device_t, uint8_t *);
-	int (*ndri_write)(nand_device_t, size_t, uint8_t *);
-	int (*ndri_read_rnb)(nand_device_t);
-	int (*ndri_calc_ecc)(nand_device_t, uint8_t *);
+	int (*ndri_select)(nand_device_t, int);			/* (O) */
+	int (*ndri_command)(nand_device_t, uint8_t);		/* (R) */
+	int (*ndri_address)(nand_device_t, uint8_t);		/* (R) */
+	int (*ndri_read)(nand_device_t, size_t, uint8_t *);	/* (R) */
+	int (*ndri_read_8)(nand_device_t, uint8_t *);		/* (R) */
+	int (*ndri_write)(nand_device_t, size_t, uint8_t *);	/* (R) */
+	int (*ndri_read_rnb)(nand_device_t);			/* (O) */
+	int (*ndri_calc_ecc)(nand_device_t, uint8_t *);		/* (O) */
 };
 
 struct nand_device_info {

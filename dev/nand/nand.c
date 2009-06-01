@@ -41,6 +41,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/lock.h>
 #include <sys/mutex.h>
 
+#include <geom/geom.h>
 #include <geom/geom_disk.h>
 
 #include "nandreg.h"
@@ -261,6 +262,29 @@ nand_strategy(struct bio *bp)
 		}
 		nand_wait_select(ndev, 0);
 		break;
+
+	case BIO_GETATTR:
+		/* TODO: Fill in */
+		if (g_handleattr_int(bp, "NAND::luncount", ndev->ndev_lun_cnt))
+			return;
+		if (g_handleattr_int(bp, "NAND::blocksize",
+		    ndev->ndev_page_size * ndev->ndev_page_cnt))
+			return;
+		if (g_handleattr_int(bp, "NAND::blockcount",
+		    ndev->ndev_block_cnt))
+			return;
+		if (g_handleattr_int(bp, "NAND::pagesize",ndev->ndev_page_size))
+			return;
+		if (g_handleattr_int(bp, "NAND::pagecount",
+		    ndev->ndev_page_size))
+			return;
+		if (g_handleattr_int(bp, "NAND::oobsize",ndev->ndev_spare_size))
+			return;
+		if (g_handleattr_int(bp, "NAND::cellsize",ndev->ndev_cell_size))
+			return;
+
+		bp->bio_error = ENOIOCTL;
+		bp->bio_flags |= BIO_ERROR;
 
 	default:
 		bp->bio_error = ENOTSUP;

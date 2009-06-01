@@ -126,7 +126,6 @@ nand_wait_status(nand_device_t ndev)
 {
 	uint8_t status;
 
-	/* TODO: Implement in nandsim */
 	nand_command(ndev, NAND_CMD_READ_STATUS);
 	nand_read_8(ndev, &status);
 

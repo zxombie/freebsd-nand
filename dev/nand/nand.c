@@ -151,6 +151,9 @@ nand_read_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 	return (err);
 }
 
+/*
+ * Writes data to the disk including the spare area after the sector
+ */
 static int
 nand_write_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 {

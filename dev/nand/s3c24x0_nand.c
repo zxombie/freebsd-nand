@@ -256,7 +256,7 @@ s3c24x0_nand_read(nand_device_t ndev, size_t len, uint8_t *data)
 	ioh = sc->sc_nand_ioh;
 
 	for (pos = 0; pos < len; pos++) {
-		data[pos] = bus_space_read_1(iot, ioh, sc->sc_data_reg);
+		data[pos] = bus_space_read_4(iot, ioh, sc->sc_data_reg) & 0xFF;
 	}
 
 	return (0);

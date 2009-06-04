@@ -50,7 +50,14 @@ struct nand_driver {
 	int (*ndri_read_8)(nand_device_t, uint8_t *);		/* (R) */
 	int (*ndri_write)(nand_device_t, size_t, uint8_t *);	/* (R) */
 	int (*ndri_read_rnb)(nand_device_t);			/* (O) */
+	int (*ndri_init_ecc)(nand_device_t);			/* (O) */
+	/*
+	 * ndri_calc_ecc and ndri_fix_data can
+	 * be NULL when ndev->ndev_ecc is NULL
+	 */
 	int (*ndri_calc_ecc)(nand_device_t, uint8_t *);		/* (O) */
+	int (*ndri_fix_data)(nand_device_t, size_t, uint8_t *, uint8_t *,
+	    uint8_t *);						/* (O) */
 };
 
 struct nand_device_info {
@@ -71,6 +78,13 @@ struct nand_device_info {
 	const char	*ndi_name;	/* The name of the device */
 };
 
+struct nand_ecc_data {
+	size_t		ecc_size;	/* Total size of the ECC */
+	size_t		ecc_stride;	/* Bytes per ECC block */
+	size_t		ecc_protect;	/* Bytes on NAND per stride */
+	off_t		ecc_pos[];	/* ECC location */
+};
+
 struct nand_device {
 	/* Set by the NAND controller */
 	nand_driver_t	ndev_driver;
@@ -89,6 +103,12 @@ struct nand_device {
 #define ndev_row_cycles	ndev_info.ndi_row_cycles
 #define ndev_read_start	ndev_info.ndi_read_start
 #define ndev_name	ndev_info.ndi_name
+
+	uint8_t		*ndev_oob;	/* Used to hold the oob to read/write */
+
+	struct nand_ecc_data *ndev_ecc;	/* The layout of the ECC bytes */
+	uint8_t		*ndev_calc_ecc;	/* The calculated ECC value */
+	uint8_t		*ndev_read_ecc;
 
 	device_t	ndev_dev;
 	struct disk	*ndev_disk;
@@ -127,7 +147,15 @@ do {							\
 		}					\
 	}						\
 } while (0)
-#define nand_calc_ecc(ndev, data) ndev->ndev_driver->ndri_calc_ecc(ndev, data)
+
+#define nand_init_ecc(ndev) 				\
+do {							\
+	if (ndev->ndev_driver->ndri_init_ecc != NULL)	\
+		ndev->ndev_driver->ndri_init_ecc(ndev);	\
+} while (0)
+#define nand_calc_ecc(ndev, ecc) ndev->ndev_driver->ndri_calc_ecc(ndev, ecc)
+#define nand_fix_data(ndev, len, data, calc_ecc, oob)	\
+	ndev->ndev_driver->ndri_fix_data(ndev, len, data, calc_ecc, oob)
 
 int nand_probe(nand_device_t);
 int nand_attach(nand_device_t);

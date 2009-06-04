@@ -74,7 +74,8 @@ uma_zone_t nand_device_zone;
 unsigned int next_unit = 0;
 
 static int nand_readid(nand_device_t);
-static int nand_read_data(nand_device_t, off_t, size_t, uint8_t *);
+static int nand_read_data(nand_device_t, off_t, uint8_t *);
+static int nand_write_data(nand_device_t, off_t, uint8_t *);
 
 static d_strategy_t nand_strategy;
 
@@ -128,11 +129,90 @@ nand_wait_status(nand_device_t ndev)
 	return status;
 }
 
+static int
+nand_rw_data(nand_device_t ndev, off_t page, uint8_t *data, int read)
+{
+	size_t len, ecc_stride, stride;
+	off_t pos, ecc_pos, ecc_off;
+	int err;
+
+	ecc_stride = 0;
+	stride = ndev->ndev_page_size;
+	if (ndev->ndev_ecc != NULL) {
+		if (stride > ndev->ndev_ecc->ecc_protect)
+			stride = ndev->ndev_ecc->ecc_protect;
+		ecc_stride = ndev->ndev_ecc->ecc_stride;
+	}
+	len = stride;
+
+	/* Read each ECC block */
+	for (pos = 0, ecc_pos = 0; pos < ndev->ndev_page_size;
+	     pos += len, ecc_pos += ecc_stride) {
+		/* Init the ECC for the read */
+		nand_init_ecc(ndev);
+
+		/* Read the page */
+		if (len < ndev->ndev_page_size - pos)
+			len = ndev->ndev_page_size - pos;
+		if (read)
+			nand_read(ndev, len, &data[pos]);
+		else
+			nand_write(ndev, len, &data[pos]);
+
+		/* Calculate the ECC value of the data we just read */
+		if (ndev->ndev_calc_ecc != NULL)
+			nand_calc_ecc(ndev, &ndev->ndev_calc_ecc[ecc_pos]);
+	}
+
+	if (read)
+		nand_read(ndev, ndev->ndev_spare_size, ndev->ndev_oob);
+	else
+		memset(ndev->ndev_oob, 0xFF, ndev->ndev_spare_size);
+
+	/* Copy the ECC to the relevant positions in the OOB */
+	if (ndev->ndev_calc_ecc != NULL) {
+		for (ecc_pos = 0; ecc_pos < ndev->ndev_ecc->ecc_size;
+		     ecc_pos++) {
+			/* The offset in the OOB of this byte of ECC data */
+			ecc_off = ndev->ndev_ecc->ecc_pos[ecc_pos];
+
+			if (read)
+				ndev->ndev_read_ecc[ecc_pos] =
+				    ndev->ndev_oob[ecc_off];
+			else
+				ndev->ndev_oob[ecc_off] =
+				    ndev->ndev_calc_ecc[ecc_pos];
+		}
+
+		if (read) {
+			len = stride;
+			for (pos = 0, ecc_pos = 0; pos < ndev->ndev_page_size;
+			     pos += len, ecc_pos += ecc_stride) {
+				if (len < ndev->ndev_page_size - pos)
+					len = ndev->ndev_page_size - pos;
+				err = nand_fix_data(ndev, len, &data[pos],
+				    &ndev->ndev_calc_ecc[ecc_pos],
+				    &ndev->ndev_read_ecc[ecc_pos]);
+				if (err != 0)
+					return (err);
+			}
+		}
+	}
+
+	if (!read) {
+		/* TODO: Copy any extra data into the OOB */
+		/* Write the OOB */
+		nand_write(ndev, ndev->ndev_spare_size, ndev->ndev_oob);
+	}
+
+	return (0);
+}
+
 /*
  * Reads the data including spare if len is large enough from the NAND flash
  */
 static int
-nand_read_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
+nand_read_data(nand_device_t ndev, off_t page, uint8_t *data)
 {
 	int err = 0;
 
@@ -146,8 +226,7 @@ nand_read_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
 	/* Wait for data to be read */
 	nand_wait_rnb(ndev);
 
-	nand_read(ndev, len, data);
-
+	err = nand_rw_data(ndev, page, data, 1);
 
 	return (err);
 }
@@ -156,13 +235,15 @@ nand_read_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
  * Writes data to the disk including the spare area after the sector
  */
 static int
-nand_write_data(nand_device_t ndev, off_t page, size_t len, uint8_t *data)
+nand_write_data(nand_device_t ndev, off_t page, uint8_t *data)
 {
 	uint8_t status;
 
 	nand_command(ndev, NAND_CMD_PROGRAM);
 	nand_write_address(ndev, page, 1);
-	nand_write(ndev, len, data);
+
+	nand_rw_data(ndev, page, data, 0);
+
 	nand_command(ndev, NAND_CMD_PROGRAM_END);
 
 	status = nand_wait_status(ndev);
@@ -210,11 +291,9 @@ nand_strategy(struct bio *bp)
 		nand_wait_select(ndev, 1);
 		while (cnt > 0) {
 			if (bp->bio_cmd == BIO_READ)
-				err = nand_read_data(ndev, page,
-				    ndev->ndev_page_size, data);
+				err = nand_read_data(ndev, page, data);
 			else
-				err = nand_write_data(ndev, page,
-				    ndev->ndev_page_size, data);
+				err = nand_write_data(ndev, page, data);
 
 			if (err != 0) {
 				bp->bio_error = err;
@@ -348,6 +427,14 @@ nand_attach(nand_device_t ndev)
 	if (err != 0)
 		goto out;
 
+	ndev->ndev_oob = malloc(ndev->ndev_spare_size, M_NAND, M_WAITOK);
+
+	if (ndev->ndev_ecc != NULL) {
+		ndev->ndev_calc_ecc = malloc(ndev->ndev_ecc->ecc_size, M_NAND,
+		    M_WAITOK);
+		ndev->ndev_read_ecc = malloc(ndev->ndev_ecc->ecc_size, M_NAND,
+		    M_WAITOK);
+	}
 
 	ndev->ndev_disk = disk_alloc();
 	ndev->ndev_disk->d_name = "nand";
@@ -383,6 +470,10 @@ nand_detach(nand_device_t ndev)
 		ndev->ndev_disk = NULL;
 	}
 
+	free(ndev->ndev_oob, M_NAND);
+	free(ndev->ndev_calc_ecc, M_NAND);
+	free(ndev->ndev_read_ecc, M_NAND);
+	ndev->ndev_oob = ndev->ndev_calc_ecc = ndev->ndev_read_ecc = NULL;
 
 	return (0);
 }

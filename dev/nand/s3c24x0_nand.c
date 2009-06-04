@@ -67,6 +67,10 @@ static int	s3c24x0_nand_read(nand_device_t, size_t, uint8_t *);
 static int	s3c24x0_nand_read_8(nand_device_t, uint8_t *);
 static int	s3c24x0_nand_write(nand_device_t, size_t, uint8_t *);
 static int	s3c24x0_read_rnb(nand_device_t);
+static int	s3c24x0_init_ecc(nand_device_t);
+static int	s3c24x0_calc_ecc(nand_device_t, uint8_t *);
+static int	s3c24x0_fix_data(nand_device_t, size_t, uint8_t *, uint8_t *,
+    uint8_t *);
 
 static struct nand_driver s3c24x0_nand_dri = {
 	.ndri_select = s3c24x0_select,
@@ -76,6 +80,16 @@ static struct nand_driver s3c24x0_nand_dri = {
 	.ndri_read_8 = s3c24x0_nand_read_8,
 	.ndri_read_rnb = s3c24x0_read_rnb,
 	.ndri_write = s3c24x0_nand_write,
+	.ndri_init_ecc = s3c24x0_init_ecc,
+	.ndri_calc_ecc = s3c24x0_calc_ecc,
+	.ndri_fix_data = s3c24x0_fix_data,
+};
+
+struct nand_ecc_data s3c2410_nand_ecc = {
+	.ecc_size = 3,
+	.ecc_stride = 3,
+	.ecc_protect = 512,
+	.ecc_pos = { 0, 1, 2 },
 };
 
 static void
@@ -168,6 +182,8 @@ s3c24x0_nand_attach(device_t dev)
 
 	/* Make sure the Flash is in a consistent state before use */
 	s3c24x0_nand_init(sc);
+
+	sc->sc_nand_dev.ndev_ecc = &s3c2410_nand_ecc;
 
 	err = nand_attach(&sc->sc_nand_dev);
 	if (err != 0) {
@@ -292,6 +308,67 @@ s3c24x0_read_rnb(nand_device_t ndev)
 
 	rnb = bus_space_read_1(iot, ioh, sc->sc_stat_reg) & NFSTAT_READY;
 	return (rnb == NFSTAT_READY);
+}
+
+static int
+s3c24x0_init_ecc(nand_device_t ndev)
+{
+	struct s3c24x0_nand_softc *sc = device_get_softc(ndev->ndev_dev);
+	bus_space_handle_t ioh;
+	bus_space_tag_t iot;
+	uint32_t nfconf;
+
+	iot = sc->sc_sx.sc_iot;
+	ioh = sc->sc_nand_ioh;
+
+	nfconf = bus_space_read_4(iot, ioh, NANDFC_NFCONF);
+	nfconf |= S3C2410_NFCONF_ECC;
+	bus_space_write_4(iot, ioh, NANDFC_NFCONF, nfconf);
+
+	return (0);
+}
+
+static int
+s3c24x0_calc_ecc(nand_device_t ndev, uint8_t *ecc)
+{
+	struct s3c24x0_nand_softc *sc = device_get_softc(ndev->ndev_dev);
+	bus_space_handle_t ioh;
+	bus_space_tag_t iot;
+	uint32_t ecctmp;
+
+	iot = sc->sc_sx.sc_iot;
+	ioh = sc->sc_nand_ioh;
+
+	ecctmp = bus_space_read_4(iot, ioh, S3C2410_NANDFC_NFECC);
+	ecc[0] = ecctmp & 0xFF;
+	ecc[1] = (ecctmp >> 8) & 0xFF;
+	ecc[2] = (ecctmp >> 16) & 0xFF;
+
+	return (0);
+}
+
+static int
+s3c24x0_fix_data(nand_device_t ndev, size_t len, uint8_t *data,
+    uint8_t *calc_ecc, uint8_t *read_ecc)
+{
+	uint8_t diff[3];
+
+	diff[0] = calc_ecc[0] ^ read_ecc[0];
+	diff[1] = calc_ecc[1] ^ read_ecc[1];
+	diff[2] = calc_ecc[2] ^ read_ecc[2];
+
+	/* The two ECC's are the same so are correct */
+	if (diff[0] == 0x00 && diff[1] == 0x00 && diff[2] == 0x00)
+		return (0);
+	/* There may be no ECC, ignore this case */
+	if (read_ecc[0] == 0xFF && read_ecc[1] == 0xFF && read_ecc[2] == 0xFF)
+		return (0);
+
+	/* TODO: Fix the data if we are can */
+	device_printf(ndev->ndev_dev, "Bad ECC: %X %X %X != %X %X %X\n",
+	    calc_ecc[0], calc_ecc[1], calc_ecc[2],
+	    read_ecc[0], read_ecc[1], read_ecc[2]);
+	return (EIO);
 }
 
 static device_method_t s3c2410_nand_methods[] = {

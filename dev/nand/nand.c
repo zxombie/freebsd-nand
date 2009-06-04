@@ -130,10 +130,10 @@ nand_wait_status(nand_device_t ndev)
 }
 
 static int
-nand_rw_data(nand_device_t ndev, off_t page, uint8_t *data, int read)
+nand_rw_data(nand_device_t ndev, uint8_t *data, int read)
 {
 	size_t len, ecc_stride, stride;
-	off_t pos, ecc_pos, ecc_off;
+	u_int pos, ecc_pos, ecc_off;
 	int err;
 
 	ecc_stride = 0;
@@ -226,7 +226,7 @@ nand_read_data(nand_device_t ndev, off_t page, uint8_t *data)
 	/* Wait for data to be read */
 	nand_wait_rnb(ndev);
 
-	err = nand_rw_data(ndev, page, data, 1);
+	err = nand_rw_data(ndev, data, 1);
 
 	return (err);
 }
@@ -242,7 +242,7 @@ nand_write_data(nand_device_t ndev, off_t page, uint8_t *data)
 	nand_command(ndev, NAND_CMD_PROGRAM);
 	nand_write_address(ndev, page, 1);
 
-	nand_rw_data(ndev, page, data, 0);
+	nand_rw_data(ndev, data, 0);
 
 	nand_command(ndev, NAND_CMD_PROGRAM_END);
 
@@ -276,7 +276,7 @@ nand_strategy(struct bio *bp)
 	nand_device_t ndev;
 	off_t block, page;
 	uint8_t *data;
-	int cnt, err;
+	int blk_cnt, page_cnt, err;
 
 	ndev = bp->bio_disk->d_drv1;
 
@@ -285,11 +285,11 @@ nand_strategy(struct bio *bp)
 	case BIO_READ:
 	case BIO_WRITE:
 		page = bp->bio_offset / ndev->ndev_page_size;
-		cnt = bp->bio_bcount / ndev->ndev_page_size;
+		page_cnt = bp->bio_bcount / ndev->ndev_page_size;
 		data = bp->bio_data;
 
 		nand_wait_select(ndev, 1);
-		while (cnt > 0) {
+		while (page_cnt > 0) {
 			if (bp->bio_cmd == BIO_READ)
 				err = nand_read_data(ndev, page, data);
 			else
@@ -304,7 +304,7 @@ nand_strategy(struct bio *bp)
 			bp->bio_resid -= ndev->ndev_page_size;
 			data += ndev->ndev_page_size;
 			page++;
-			cnt--;
+			page_cnt--;
 		}
 		nand_wait_select(ndev, 0);
 		break;
@@ -312,7 +312,7 @@ nand_strategy(struct bio *bp)
 	case BIO_DELETE:
 		block_size = ndev->ndev_page_cnt * ndev->ndev_page_size;
 		block = bp->bio_offset / block_size;
-		cnt = bp->bio_bcount / block_size;
+		blk_cnt = bp->bio_bcount / block_size;
 
 		/*
 		 * Deletes must be on a block boundry
@@ -326,7 +326,7 @@ nand_strategy(struct bio *bp)
 		}
 
 		nand_wait_select(ndev, 1);
-		while (cnt > 0) {
+		while (blk_cnt > 0) {
 			err = nand_erase_data(ndev, block);
 
 			if (err != 0) {
@@ -337,7 +337,7 @@ nand_strategy(struct bio *bp)
 
 			bp->bio_resid -= block_size;
 			block++;
-			cnt--;
+			blk_cnt--;
 		}
 		nand_wait_select(ndev, 0);
 		break;
@@ -479,12 +479,13 @@ nand_detach(nand_device_t ndev)
 }
 
 static int
-nand_load(module_t mod, int what, void *arg)
+nand_load(module_t mod __unused, int what, void *arg __unused)
 {
+	char name[] = "nand_device";
 	switch (what) {
 	case MOD_LOAD:
-		nand_device_zone = uma_zcreate("nand_device",
-		    sizeof(struct nand_device), NULL, NULL, NULL, NULL, 0, 0);
+		nand_device_zone = uma_zcreate(name, sizeof(struct nand_device),
+		    NULL, NULL, NULL, NULL, 0, 0);
 		return (0);
 	case MOD_UNLOAD:
 		uma_zdestroy(nand_device_zone);

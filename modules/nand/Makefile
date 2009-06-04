@@ -4,6 +4,7 @@
 
 KMOD=	nand
 SRCS=	nand.c nandreg.h nandvar.h
+WARNS?=	6
 
 CFLAGS+= -DINVARIANTS
 
